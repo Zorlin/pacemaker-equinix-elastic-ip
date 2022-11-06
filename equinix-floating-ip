@@ -3,8 +3,8 @@
 #
 # OCF resource agent to move a floating address in an Openstack tenant.
 #
-# Copyright (c) 2018 Mathieu GRZYBEK
-# Based on code of Markus Guertler
+# Copyright (c) 2022 Benjamin Arntzen & Protocol Labs
+# Based on code of Markus Guertler and Mathieu GRZYBEK
 # All Rights Reserved.
 #
 # This program is free software; you can redistribute it and/or modify
@@ -35,9 +35,11 @@
 . ${OCF_FUNCTIONS_DIR}/ocf-shellfuncs
 
 # Defaults
-OCF_RESKEY_openstackcli_default="/usr/bin/openstack"
+OCF_RESKEY_equinixfact_default="/etc/ansible/fact.d/uuid.fact"
+OCF_RESKEY_ip_default=""
 
-: ${OCF_RESKEY_openstackcli=${OCF_RESKEY_openstackcli_default}}
+: ${OCF_RESKEY_equinixfact=${OCF_RESKEY_equinixfact_default}}
+: ${OCF_RESKEY_ip=${OCF_RESKEY_ip_default}}
 
 #######################################################################
 
@@ -57,46 +59,32 @@ metadata() {
 cat <<END
 <?xml version="1.0"?>
 <!DOCTYPE resource-agent SYSTEM "ra-api-1.dtd">
-<resource-agent name="openstack-floating-ip">
+<resource-agent name="equinix-floating-ip">
 <version>2.0</version>
 <longdesc lang="en">
 Resource Agent to move a floating IP address from an instance to another one.
-It relies on attributes given by openstack-info resource agent (openstack_ports, openstack_id attributes).
-The attribute called "openstack_floating_ip" is updated.
+It relies on an Ansible-style fact stored as /etc/ansible/facts.d/uuid.fact to retrieve
+a machine UUID and API token with which to move that token to that machine.
 </longdesc>
 <shortdesc lang="en">Move a floating IP</shortdesc>
 
 <parameters>
-<parameter name="openstackcli">
+<parameter name="equinixfact">
 <longdesc lang="en">
-Path to command line tools for openstack.
+Path to an INI-style fact file in which a valid UUID for the node and a valid Equinix Metal API token is stored.
 </longdesc>
-<shortdesc lang="en">Path to Openstack CLI tool</shortdesc>
-<content type="string" default="${OCF_RESKEY_openstackcli_default}" />
+<shortdesc lang="en">Path to Equinix Metal config fact</shortdesc>
+<content type="string" default="${OCF_RESKEY_equinixfact_default}" />
 </parameter>
 
-<parameter name="openrc" required="1">
+<parameter name="ip" unique="1" required="1">
 <longdesc lang="en">
-Valid Openstack credentials as openrc file from api_access/openrc.
+The IPv4 (dotted quad notation) or IPv6 address (colon hexadecimal notation)
+example IPv4 "192.168.1.1".
+example IPv6 "2001:db8:DC28:0:0:FC57:D4C8:1FFF".
 </longdesc>
-<shortdesc lang="en">openrc file</shortdesc>
-<content type="string" />
-</parameter>
-
-<parameter name="ip_id" required="1">
-<longdesc lang="en">
-Floating IP Identifier.
-</longdesc>
-<shortdesc lang="en">IP ID</shortdesc>
-<content type="string" />
-</parameter>
-
-<parameter name="subnet_id" required="1">
-<longdesc lang="en">
-Subnet Identifier to use to attach the address.
-</longdesc>
-<shortdesc lang="en">Subnet ID</shortdesc>
-<content type="string" />
+<shortdesc lang="en">IPv4 or IPv6 address</shortdesc>
+<content type="string" default="${OCF_RESKEY_ip_default}" />
 </parameter>
 
 </parameters>
@@ -112,7 +100,7 @@ Subnet Identifier to use to attach the address.
 END
 }
 
-osflip_validate() {
+emflip_validate() {
 	check_binary "$OCF_RESKEY_openstackcli"
 
 	if [ -z "$OCF_RESKEY_openrc" ]; then
@@ -141,7 +129,7 @@ osflip_validate() {
 	return $OCF_SUCCESS
 }
 
-osflip_monitor() {
+emflip_monitor() {
 	local result
 	local floating_ip
 	local node_port_ids
@@ -175,10 +163,10 @@ osflip_monitor() {
 	return $OCF_NOT_RUNNING
 }
 
-osflip_stop() {
+emflip_stop() {
 	ocf_log info "Bringing down IP address $OCF_RESKEY_ip_id"
 
-	osflip_monitor
+	emflip_monitor
 	if [ $? = $OCF_NOT_RUNNING ]; then
 		ocf_log info "Address $OCF_RESKEY_ip_id already down"
 		return $OCF_SUCCESS
@@ -188,7 +176,7 @@ osflip_stop() {
 		return $OCF_ERR_GENERIC
 	fi
 
-	osflip_monitor
+	emflip_monitor
 	if [ $? != $OCF_NOT_RUNNING ]; then
 		ocf_log error "Couldn't unset IP address $OCF_RESKEY_ip_id."
 		return $OCF_ERR_GENERIC
@@ -198,11 +186,11 @@ osflip_stop() {
 	return $OCF_SUCCESS
 }
 
-osflip_start() {
+emflip_start() {
 	local node_port_id
 	local node_port_ids
 
-	osflip_monitor
+	emflip_monitor
 	if [ $? = $OCF_SUCCESS ]; then
 		ocf_log info "$OCF_RESKEY_ip_id already started"
 		return $OCF_SUCCESS
@@ -224,7 +212,7 @@ osflip_start() {
 		return $OCF_ERR_GENERIC
 	fi
 
-	osflip_monitor
+	emflip_monitor
 	if [ $? != $OCF_SUCCESS ]; then
 		ocf_log error "$OCF_RESKEY_ip_id Cannot be set to port $node_port_id"
 		return $OCF_ERR_GENERIC
@@ -255,15 +243,15 @@ if ! ocf_is_root; then
 	exit $OCF_ERR_PERM
 fi
 
-osflip_validate
+emflip_validate
 
 case $__OCF_ACTION in
 	start)
-		osflip_start;;
+		emflip_start;;
 	stop)
-		osflip_stop;;
+		emflip_stop;;
 	monitor)
-		osflip_monitor;;
+		emflip_monitor;;
 	validate-all)
 		exit $?;;
 	*)
