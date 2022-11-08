@@ -42,7 +42,7 @@ Create an `ocf:heartbeat:IPaddr2` resource (replace ip with your needed IP, bond
 
 Create the Equinix Metal Elastic IP resource (replace ip with your needed IP)
 
-`pcs resource create elastic_ip_metal ocf:equinix:equinix-elastic-ip ip=10.70.197.254
+`pcs resource create elastic_ip_metal ocf:equinix:equinix-elastic-ip ip=10.70.197.254`
 
 Create a colocation rule that says they must always "live together"
 
