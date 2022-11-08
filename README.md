@@ -31,12 +31,12 @@ and equinix_token is a valid token with read/write scope for your Equinix Metal 
 
 ## Using the resource agent
 
-This resource is best used *in combination* with the ocf:heartbeat:IPaddr2 resource agent. 
+This resource is best used *in combination* with the `ocf:heartbeat:IPaddr2` resource agent. 
 
-This agent will handle moving the elastic IP between machines in the API, while the ocf:heartbeat:IPaddr2 
+This agent will handle moving the elastic IP between machines in the API, while the `ocf:heartbeat:IPaddr2` 
 will handle adding the IP itself to an interface on whichever machine you failover to.
 
-Create an ocf:heartbeat:IPaddr2 resource (replace ip with your needed IP, bond0 with the interface it should live on):
+Create an `ocf:heartbeat:IPaddr2` resource (replace ip with your needed IP, bond0 with the interface it should live on):
 
 `pcs resource create virtual_ip ocf:heartbeat:IPaddr2 ip=10.70.197.254 cidr_netmask=32 nic=bond0`
 
