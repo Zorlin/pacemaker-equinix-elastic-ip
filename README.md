@@ -1,5 +1,4 @@
-# pacemaker-equinix-resource-agents
-
+# Pacemaker Elastic IP on Equinix Metal
 This project adds Equinix Metal Elastic IP address support to Pacemaker.
 
 ## Configuration
