@@ -47,3 +47,9 @@ Create the Equinix Metal Elastic IP resource (replace ip with your needed IP)
 Create a colocation rule that says they must always "live together"
 
 `pcs constraint colocation add virtual_ip with elastic_ip_metal INFINITY`
+
+## Credits and License
+
+Copyright (c) 2022 Benjamin Arntzen & Protocol Labs, licensed under the GNU General Public License v2.
+
+Based on code of Markus Guertler and Mathieu GRZYBEK.
