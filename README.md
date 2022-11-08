@@ -1,6 +1,8 @@
 # Pacemaker Elastic IP on Equinix Metal
 This project adds Equinix Metal Elastic IP address support to Pacemaker.
 
+[![asciicast](https://asciinema.org/a/X5bkycTrWOCod7bljEaRsN5Qv.svg)](https://asciinema.org/a/X5bkycTrWOCod7bljEaRsN5Qv)
+
 ## Configuration
 Global configuration:
 
