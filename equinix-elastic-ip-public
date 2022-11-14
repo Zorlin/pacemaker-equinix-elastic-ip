@@ -1,0 +1,262 @@
+#!/bin/sh
+#
+#
+# OCF resource agent to move an Elastic IP between machines
+# within Equinix Metal.
+#
+# Copyright (c) 2022 Benjamin Arntzen & Protocol Labs
+# Based on code of Markus Guertler and Mathieu GRZYBEK
+# All Rights Reserved.
+#
+# This program is free software; you can redistribute it and/or modify
+# it under the terms of version 2 of the GNU General Public License as
+# published by the Free Software Foundation.
+#
+# This program is distributed in the hope that it would be useful, but
+# WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+#
+# Further, this software is distributed without any warranty that it is
+# free of the rightful claim of any third person regarding infringement
+# or the like.  Any license provided herein, whether implied or
+# otherwise, applies only to this software file.  Patent licenses, if
+# any, provided herein do not apply to combinations of this program with
+# other software, or any other product whatsoever.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program; if not, write the Free Software Foundation,
+# Inc., 59 Temple Place - Suite 330, Boston MA 02111-1307, USA.
+#
+
+
+#######################################################################
+# Initialization:
+
+: ${OCF_FUNCTIONS_DIR=${OCF_ROOT}/lib/heartbeat}
+. ${OCF_FUNCTIONS_DIR}/ocf-shellfuncs
+
+# Defaults
+OCF_RESKEY_equinixfact_default="/etc/ansible/facts.d/uuid.fact"
+OCF_RESKEY_ip_default=""
+
+: ${OCF_RESKEY_equinixfact=${OCF_RESKEY_equinixfact_default}}
+: ${OCF_RESKEY_ip=${OCF_RESKEY_ip_default}}
+
+# Load in Equinix machine UUID and token
+MACHINE_UUID=$(crudini --get $OCF_RESKEY_equinixfact '' equinix_uuid)
+EQUINIX_TOKEN=$(crudini --get $OCF_RESKEY_equinixfact '' equinix_token)
+# Set this yourself
+EQUINIX_PROJECT="5f3c29b7-bda3-4f3b-8957-19b1f4b4b6ec"
+#######################################################################
+
+
+USAGE="usage: $0 {start|stop|status|meta-data}";
+###############################################################################
+
+
+###############################################################################
+#
+# Functions
+#
+###############################################################################
+
+
+metadata() {
+cat <<END
+<?xml version="1.0"?>
+<!DOCTYPE resource-agent SYSTEM "ra-api-1.dtd">
+<resource-agent name="equinix-elastic-ip">
+<version>2.0</version>
+<longdesc lang="en">
+Resource Agent to move a elastic IP address from an instance to another one.
+It relies on an Ansible-style fact stored as /etc/ansible/facts.d/uuid.fact to retrieve
+a machine UUID and API token with which to move that token to that machine, as well as
+Crudini being installed to make it reasonably safe to parse the facts file.
+</longdesc>
+<shortdesc lang="en">Move a elastic IP</shortdesc>
+
+<parameters>
+<parameter name="equinixfact">
+<longdesc lang="en">
+Path to an INI-style fact file in which a valid UUID for the node and a valid Equinix Metal API token is stored.
+</longdesc>
+<shortdesc lang="en">Path to Equinix Metal config fact</shortdesc>
+<content type="string" default="${OCF_RESKEY_equinixfact_default}" />
+</parameter>
+
+<parameter name="ip" unique="1" required="1">
+<longdesc lang="en">
+The IPv4 (dotted quad notation) or IPv6 address (colon hexadecimal notation)
+example IPv4 "192.168.1.1".
+example IPv6 "2001:db8:DC28:0:0:FC57:D4C8:1FFF".
+</longdesc>
+<shortdesc lang="en">IPv4 or IPv6 address</shortdesc>
+<content type="string" default="${OCF_RESKEY_ip_default}" />
+</parameter>
+
+</parameters>
+
+<actions>
+<action name="start" timeout="180s" />
+<action name="stop" timeout="180s" />
+<action name="monitor" depth="0" timeout="30s" interval="60s" />
+<action name="validate-all" timeout="5s" />
+<action name="meta-data" timeout="5s" />
+</actions>
+</resource-agent>
+END
+}
+
+emflip_validate() {
+	if [ -z "$MACHINE_UUID" ]; then
+		ocf_exit_reason "machine UUID not set"
+		return $OCF_ERR_CONFIGURED
+	fi
+
+	if [ -z "$EQUINIX_TOKEN" ] ; then
+		ocf_exit_reason "equinix metal token not found"
+		return $OCF_ERR_CONFIGURED
+	fi
+
+	if [ -z "$OCF_RESKEY_ip" ] ; then
+		ocf_exit_reason "IP not set"
+		return $OCF_ERR_CONFIGURED
+	fi
+
+	return $OCF_SUCCESS
+}
+
+emflip_monitor() {
+	local result
+	local elastic_ip
+	local crm_node
+
+	crm_node=$(crm_node -n)
+
+	# Is the IP active and attached?
+	currently_assigned=$(curl -X GET \
+	-H "Content-Type: application/json" \
+	-H "X-Auth-Token: $EQUINIX_TOKEN" \
+	"https://api.equinix.com/metal/v1/projects/$EQUINIX_PROJECT/ips?types=public_ipv4&include=assignments.assigned_to" | jq -r '.ip_addresses[] | select(.network == "139.178.84.65")' | jq -r '.assignments[] | select(.address == "139.178.84.65")' | jq -r '.assigned_to.hostname')
+
+	assignment_id=$(curl -X GET \
+	-H "Content-Type: application/json" \
+	-H "X-Auth-Token: $EQUINIX_TOKEN" \
+	"https://api.equinix.com/metal/v1/projects/$EQUINIX_PROJECT/ips?types=public_ipv4&include=assignments.assigned_to" | jq -r '.ip_addresses[] | select(.network == "139.178.84.65")' | jq -r '.assignments[] | select(.address == "139.178.84.65")' | jq -r '.id')
+
+	if [ "$currently_assigned" = "$crm_node" ] ; then
+		ocf_log info "$OCF_RESKEY_ip is attached to this machine"
+		return $OCF_SUCCESS
+	else
+		ocf_log warn "$OCF_RESKEY_ip is not attached to this machine"
+		return $OCF_NOT_RUNNING
+	fi
+}
+
+emflip_stop() {
+	ocf_log info "Bringing down IP address $OCF_RESKEY_ip"
+
+	emflip_monitor
+	if [ $? = $OCF_NOT_RUNNING ]; then
+		ocf_log info "Address $OCF_RESKEY_ip already down"
+		return $OCF_SUCCESS
+	fi
+
+	if ! (curl -X DELETE \
+        -H "Content-Type: application/json" \
+        -H "X-Auth-Token: $EQUINIX_TOKEN" \
+        "https://api.equinix.com/metal/v1/ips/$assignment_id") ; then
+		return $OCF_ERR_GENERIC
+	fi
+
+	emflip_monitor
+	if [ $? != $OCF_NOT_RUNNING ]; then
+		ocf_log error "Couldn't unset IP address $OCF_RESKEY_ip."
+		return $OCF_ERR_GENERIC
+	fi
+
+	ocf_log info "Successfully brought unset $OCF_RESKEY_ip"
+	return $OCF_SUCCESS
+}
+
+emflip_start() {
+	emflip_monitor
+	if [ $? = $OCF_SUCCESS ]; then
+		ocf_log info "$OCF_RESKEY_ip already started"
+		return $OCF_SUCCESS
+	fi
+
+	ocf_log info "Moving IP address $OCF_RESKEY_ip to UUID $MACHINE_UUID"
+
+	if ! (curl -X DELETE \
+        -H "Content-Type: application/json" \
+        -H "X-Auth-Token: $EQUINIX_TOKEN" \
+        "https://api.equinix.com/metal/v1/ips/$assignment_id") ; then
+		ocf_log warn "Failed to unset existing IP, this may be fine"
+	fi
+
+	curl -X POST \
+	-H "Content-Type: application/json" \
+	-H "X-Auth-Token: $EQUINIX_TOKEN" \
+	"https://api.equinix.com/metal/v1/devices/$MACHINE_UUID/ips" \
+	-d '{
+        "address": "139.178.84.65/32"
+	}'
+
+	if [ $? = 0 ]; then
+		ocf_log info "$OCF_RESKEY_ip successfully assigned!"
+		return $OCF_SUCCESS
+	fi
+
+	if [ $? != $OCF_SUCCESS ]; then
+		ocf_log error "$OCF_RESKEY_ip cannot be set to UUID $MACHINE_UUID, check your UUID and API token"
+		return $OCF_ERR_GENERIC
+	fi
+
+	emflip_monitor
+	if [ $? != $OCF_SUCCESS ]; then
+		ocf_log error "$OCF_RESKEY_ip was set for UUID $MACHINE_UUID but what we fetched says otherwise"
+		return $OCF_ERR_GENERIC
+	fi
+
+	return $OCF_SUCCESS
+}
+
+###############################################################################
+#
+# MAIN
+#
+###############################################################################
+
+case $__OCF_ACTION in
+	meta-data)
+		metadata
+		exit $OCF_SUCCESS
+		;;
+	usage|help)
+		echo $USAGE
+		exit $OCF_SUCCESS
+		;;
+esac
+
+if ! ocf_is_root; then
+	ocf_log err "You must be root for $__OCF_ACTION operation."
+	exit $OCF_ERR_PERM
+fi
+
+emflip_validate
+
+case $__OCF_ACTION in
+	start)
+		emflip_start;;
+	stop)
+		emflip_stop;;
+	monitor)
+		emflip_monitor;;
+	validate-all)
+		exit $?;;
+	*)
+		echo $USAGE
+		exit $OCF_ERR_UNIMPLEMENTED
+		;;
+esac
