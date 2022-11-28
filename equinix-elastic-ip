@@ -38,6 +38,7 @@
 # Defaults
 OCF_RESKEY_equinixfact_default="/etc/ansible/facts.d/uuid.fact"
 OCF_RESKEY_ip_default=""
+OCF_RESKEY_subnet_default=""
 
 : ${OCF_RESKEY_equinixfact=${OCF_RESKEY_equinixfact_default}}
 : ${OCF_RESKEY_ip=${OCF_RESKEY_ip_default}}
@@ -45,8 +46,7 @@ OCF_RESKEY_ip_default=""
 # Load in Equinix machine UUID and token
 MACHINE_UUID=$(crudini --get $OCF_RESKEY_equinixfact '' equinix_uuid)
 EQUINIX_TOKEN=$(crudini --get $OCF_RESKEY_equinixfact '' equinix_token)
-# Set this yourself
-EQUINIX_PROJECT="5f3c29b7-bda3-4f3b-8957-19b1f4b4b6ec"
+EQUINIX_PROJECT=$(crudini --get $OCF_RESKEY_equinixfact '' equinix_project)
 #######################################################################
 
 
@@ -86,12 +86,20 @@ Path to an INI-style fact file in which a valid UUID for the node and a valid Eq
 
 <parameter name="ip" unique="1" required="1">
 <longdesc lang="en">
-The IPv4 (dotted quad notation) or IPv6 address (colon hexadecimal notation)
-example IPv4 "192.168.1.1".
-example IPv6 "2001:db8:DC28:0:0:FC57:D4C8:1FFF".
+The IPv4 (dotted quad notation) address
+example "192.168.1.1".
 </longdesc>
-<shortdesc lang="en">IPv4 or IPv6 address</shortdesc>
+<shortdesc lang="en">IPv4 address</shortdesc>
 <content type="string" default="${OCF_RESKEY_ip_default}" />
+</parameter>
+
+<parameter name="subnet" unique="1" required="1">
+<longdesc lang="en">
+The IPv4 subnet you're using for your elastic IP.
+example "10.70.197.128".
+</longdesc>
+<shortdesc lang="en">IPv4 subnet</shortdesc>
+<content type="string" default="${OCF_RESKEY_subnet_default}" />
 </parameter>
 
 </parameters>
@@ -118,6 +126,11 @@ emflip_validate() {
 		return $OCF_ERR_CONFIGURED
 	fi
 
+	if [ -z "$OCF_RESKEY_ip" ] ; then
+		ocf_exit_reason "IP not set"
+		return $OCF_ERR_CONFIGURED
+	fi
+
 	return $OCF_SUCCESS
 }
 
@@ -132,28 +145,28 @@ emflip_monitor() {
 	currently_assigned=$(curl -X GET \
 	-H "Content-Type: application/json" \
 	-H "X-Auth-Token: $EQUINIX_TOKEN" \
-	"https://api.equinix.com/metal/v1/projects/$EQUINIX_PROJECT/ips?types=private_ipv4&include=assignments.assigned_to" | jq -r '.ip_addresses[] | select(.network == "10.70.197.128")' | jq -r '.assignments[] | select(.address == "10.70.197.254")' | jq -r '.assigned_to.hostname')
+	"https://api.equinix.com/metal/v1/projects/$EQUINIX_PROJECT/ips?types=private_ipv4&include=assignments.assigned_to" | jq -r '.ip_addresses[] | select(.network == "$OCF_RESKEY_subnet")' | jq -r '.assignments[] | select(.address == "$OCF_RESKEY_ip")' | jq -r '.assigned_to.hostname')
 
 	assignment_id=$(curl -X GET \
 	-H "Content-Type: application/json" \
 	-H "X-Auth-Token: $EQUINIX_TOKEN" \
-	"https://api.equinix.com/metal/v1/projects/$EQUINIX_PROJECT/ips?types=private_ipv4&include=assignments.assigned_to" | jq -r '.ip_addresses[] | select(.network == "10.70.197.128")' | jq -r '.assignments[] | select(.address == "10.70.197.254")' | jq -r '.id')
+	"https://api.equinix.com/metal/v1/projects/$EQUINIX_PROJECT/ips?types=private_ipv4&include=assignments.assigned_to" | jq -r '.ip_addresses[] | select(.network == "$OCF_RESKEY_subnet")' | jq -r '.assignments[] | select(.address == "$OCF_RESKEY_ip")' | jq -r '.id')
 
 	if [ "$currently_assigned" = "$crm_node" ] ; then
-		ocf_log info "$OCF_RESKEY_IP is attached to this machine"
+		ocf_log info "$OCF_RESKEY_ip is attached to this machine"
 		return $OCF_SUCCESS
 	else
-		ocf_log warn "$OCF_RESKEY_IP is not attached to this machine"
+		ocf_log warn "$OCF_RESKEY_ip is not attached to this machine"
 		return $OCF_NOT_RUNNING
 	fi
 }
 
 emflip_stop() {
-	ocf_log info "Bringing down IP address $OCF_RESKEY_ip_id"
+	ocf_log info "Bringing down IP address $OCF_RESKEY_ip"
 
 	emflip_monitor
 	if [ $? = $OCF_NOT_RUNNING ]; then
-		ocf_log info "Address $OCF_RESKEY_ip_id already down"
+		ocf_log info "Address $OCF_RESKEY_ip already down"
 		return $OCF_SUCCESS
 	fi
 
@@ -166,11 +179,11 @@ emflip_stop() {
 
 	emflip_monitor
 	if [ $? != $OCF_NOT_RUNNING ]; then
-		ocf_log error "Couldn't unset IP address $OCF_RESKEY_ip_id."
+		ocf_log error "Couldn't unset IP address $OCF_RESKEY_ip."
 		return $OCF_ERR_GENERIC
 	fi
 
-	ocf_log info "Successfully brought unset $OCF_RESKEY_ip_id"
+	ocf_log info "Successfully brought unset $OCF_RESKEY_ip"
 	return $OCF_SUCCESS
 }
 
@@ -195,10 +208,10 @@ emflip_start() {
 	-H "X-Auth-Token: $EQUINIX_TOKEN" \
 	"https://api.equinix.com/metal/v1/devices/$MACHINE_UUID/ips" \
 	-d '{
-        "address": "10.70.197.254/32"
+        "address": "$OCF_RESKEY_ip/32"
 	}'
 
-	if [ $? == 0 ]; then
+	if [ $? = 0 ]; then
 		ocf_log info "$OCF_RESKEY_ip successfully assigned!"
 		return $OCF_SUCCESS
 	fi
