@@ -44,9 +44,9 @@ OCF_RESKEY_subnet_default=""
 : ${OCF_RESKEY_ip=${OCF_RESKEY_ip_default}}
 
 # Load in Equinix machine UUID and token
-MACHINE_UUID=$(crudini --get $OCF_RESKEY_equinixfact '' equinix_uuid)
-EQUINIX_TOKEN=$(crudini --get $OCF_RESKEY_equinixfact '' equinix_token)
-EQUINIX_PROJECT=$(crudini --get $OCF_RESKEY_equinixfact '' equinix_project)
+MACHINE_UUID=$(crudini --get $OCF_RESKEY_equinixfact default equinix_uuid)
+EQUINIX_TOKEN=$(crudini --get $OCF_RESKEY_equinixfact default equinix_token)
+EQUINIX_PROJECT=$(crudini --get $OCF_RESKEY_equinixfact default equinix_project)
 #######################################################################
 
 

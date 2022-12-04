@@ -19,6 +19,7 @@ For each machine you want to participate in Pacemaker:
 Set up a file /etc/ansible/facts.d/uuid.fact as such:
 
 ```
+[default]
 equinix_uuid=this-is-not-a-real-uuid
 equinix_project=this-is-not-a-real-project
 equinix_token=this-is-not-a-real-token
