@@ -135,12 +135,12 @@ emflip_monitor() {
 	currently_assigned=$(curl -X GET \
 	-H "Content-Type: application/json" \
 	-H "X-Auth-Token: $EQUINIX_TOKEN" \
-	"https://api.equinix.com/metal/v1/projects/$EQUINIX_PROJECT/ips?types=public_ipv4&include=assignments.assigned_to" | jq -r '.ip_addresses[] | select(.network == "$OCF_RESKEY_ip")' | jq -r '.assignments[] | select(.address == "$OCF_RESKEY_ip")' | jq -r '.assigned_to.hostname')
+	"https://api.equinix.com/metal/v1/projects/$EQUINIX_PROJECT/ips?types=public_ipv4&include=assignments.assigned_to" | jq -r --arg ip "$OCF_RESKEY_ip" '.ip_addresses[] | select(.network == $ip)' | jq -r --arg ip "$OCF_RESKEY_ip" '.assignments[] | select(.address == $ip)' | jq -r '.assigned_to.hostname')
 
 	assignment_id=$(curl -X GET \
 	-H "Content-Type: application/json" \
 	-H "X-Auth-Token: $EQUINIX_TOKEN" \
-	"https://api.equinix.com/metal/v1/projects/$EQUINIX_PROJECT/ips?types=public_ipv4&include=assignments.assigned_to" | jq -r '.ip_addresses[] | select(.network == "$OCF_RESKEY_ip")' | jq -r '.assignments[] | select(.address == "$OCF_RESKEY_ip")' | jq -r '.id')
+	"https://api.equinix.com/metal/v1/projects/$EQUINIX_PROJECT/ips?types=public_ipv4&include=assignments.assigned_to" | jq -r --arg ip "$OCF_RESKEY_ip" '.ip_addresses[] | select(.network == $ip)' | jq -r --arg ip "$OCF_RESKEY_ip" '.assignments[] | select(.address == $ip)' | jq -r '.id')
 
 	if [ "$currently_assigned" = "$crm_node" ] ; then
 		ocf_log info "$OCF_RESKEY_ip is attached to this machine"
@@ -160,7 +160,8 @@ emflip_stop() {
 		return $OCF_SUCCESS
 	fi
 
-	if ! (curl -X DELETE \
+	ocf_log info "Attempting to delete $OCF_RESKEY_ip $assignment_id"
+	if ! (curl -s -X DELETE \
         -H "Content-Type: application/json" \
         -H "X-Auth-Token: $EQUINIX_TOKEN" \
         "https://api.equinix.com/metal/v1/ips/$assignment_id") ; then
@@ -186,20 +187,19 @@ emflip_start() {
 
 	ocf_log info "Moving IP address $OCF_RESKEY_ip to UUID $MACHINE_UUID"
 
-	if ! (curl -X DELETE \
-        -H "Content-Type: application/json" \
-        -H "X-Auth-Token: $EQUINIX_TOKEN" \
-        "https://api.equinix.com/metal/v1/ips/$assignment_id") ; then
-		ocf_log warn "Failed to unset existing IP, this may be fine"
+	if [ -n "$assignment_id" ]; then
+		ocf_log info "Unassigning IP address $OCF_RESKEY_ip from $assignment_id"
+		curl -X DELETE \
+		-H "Content-Type: application/json" \
+		-H "X-Auth-Token: $EQUINIX_TOKEN" \
+		"https://api.equinix.com/metal/v1/ips/$assignment_id"
 	fi
 
-	curl -X POST \
+	curl -s -X POST \
 	-H "Content-Type: application/json" \
 	-H "X-Auth-Token: $EQUINIX_TOKEN" \
 	"https://api.equinix.com/metal/v1/devices/$MACHINE_UUID/ips" \
-	-d '{
-        "address": "$OCF_RESKEY_ip/32"
-	}'
+	-d '{ "address": "'"$OCF_RESKEY_ip"'/32" }'
 
 	if [ $? = 0 ]; then
 		ocf_log info "$OCF_RESKEY_ip successfully assigned!"
