@@ -132,12 +132,12 @@ emflip_monitor() {
 	crm_node=$(crm_node -n)
 
 	# Is the IP active and attached?
-	currently_assigned=$(curl -X GET \
+	currently_assigned=$(curl -s -X GET \
 	-H "Content-Type: application/json" \
 	-H "X-Auth-Token: $EQUINIX_TOKEN" \
 	"https://api.equinix.com/metal/v1/projects/$EQUINIX_PROJECT/ips?types=public_ipv4&include=assignments.assigned_to" | jq -r --arg ip "$OCF_RESKEY_ip" '.ip_addresses[] | select(.network == $ip)' | jq -r --arg ip "$OCF_RESKEY_ip" '.assignments[] | select(.address == $ip)' | jq -r '.assigned_to.hostname')
 
-	assignment_id=$(curl -X GET \
+	assignment_id=$(curl -s -X GET \
 	-H "Content-Type: application/json" \
 	-H "X-Auth-Token: $EQUINIX_TOKEN" \
 	"https://api.equinix.com/metal/v1/projects/$EQUINIX_PROJECT/ips?types=public_ipv4&include=assignments.assigned_to" | jq -r --arg ip "$OCF_RESKEY_ip" '.ip_addresses[] | select(.network == $ip)' | jq -r --arg ip "$OCF_RESKEY_ip" '.assignments[] | select(.address == $ip)' | jq -r '.id')
@@ -189,7 +189,7 @@ emflip_start() {
 
 	if [ -n "$assignment_id" ]; then
 		ocf_log info "Unassigning IP address $OCF_RESKEY_ip from $assignment_id"
-		curl -X DELETE \
+		curl -s -X DELETE \
 		-H "Content-Type: application/json" \
 		-H "X-Auth-Token: $EQUINIX_TOKEN" \
 		"https://api.equinix.com/metal/v1/ips/$assignment_id"
